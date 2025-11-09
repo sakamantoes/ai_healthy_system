@@ -46,9 +46,9 @@ const Dashboard = ({ user, onLogout }) => {
 
       if (result.success) {
         setDashboardData({
-          adherenceRate: result.data.healthData.adherenceRate,
-          aiInsights: result.data.aiInsights,
-          healthData: result.data.healthData,
+          adherenceRate: result.data.healthData?.adherenceRate || 0,
+          aiInsights: result.data.aiInsights || "",
+          healthData: result.data.healthData || {},
         });
       } else {
         throw new Error(result.message);
@@ -114,6 +114,15 @@ const Dashboard = ({ user, onLogout }) => {
         stiffness: 100,
       },
     },
+  };
+
+  // Safe value getter for adherence rate
+  const getAdherenceRate = () => {
+    const rate = dashboardData.adherenceRate;
+    if (rate === null || rate === undefined || isNaN(rate)) {
+      return 0;
+    }
+    return rate;
   };
 
   if (loading) {
@@ -237,13 +246,13 @@ const Dashboard = ({ user, onLogout }) => {
                 <Target className="h-6 w-6 text-green-500" />
               </div>
               <div className="text-3xl font-bold text-green-600 mb-2">
-                {dashboardData.adherenceRate.toFixed(1)}%
+                {getAdherenceRate().toFixed(1)}%
               </div>
               <p className="text-gray-600 text-sm">Overall Progress</p>
               <div className="mt-3 w-full bg-gray-200 rounded-full h-2">
                 <motion.div
                   initial={{ width: 0 }}
-                  animate={{ width: `${dashboardData.adherenceRate}%` }}
+                  animate={{ width: `${getAdherenceRate()}%` }}
                   transition={{ duration: 1, ease: "easeOut" }}
                   className="h-2 rounded-full bg-green-500"
                 />
@@ -259,7 +268,7 @@ const Dashboard = ({ user, onLogout }) => {
                 <Pill className="h-6 w-6 text-blue-500" />
               </div>
               <div className="text-3xl font-bold text-blue-600 mb-2">
-                {dashboardData.healthData.medicationsCount || 0}
+                {dashboardData.healthData?.medicationsCount || 0}
               </div>
               <p className="text-gray-600 text-sm">Active</p>
             </div>
@@ -271,7 +280,7 @@ const Dashboard = ({ user, onLogout }) => {
                 <Target className="h-6 w-6 text-purple-500" />
               </div>
               <div className="text-3xl font-bold text-purple-600 mb-2">
-                {dashboardData.healthData.activeGoalsCount || 0}
+                {dashboardData.healthData?.activeGoalsCount || 0}
               </div>
               <p className="text-gray-600 text-sm">In Progress</p>
             </div>
@@ -285,7 +294,7 @@ const Dashboard = ({ user, onLogout }) => {
                 <Bell className="h-6 w-6 text-orange-500" />
               </div>
               <div className="text-3xl font-bold text-orange-600 mb-2">
-                {dashboardData.healthData.todayRemindersCount || 0}
+                {dashboardData.healthData?.todayRemindersCount || 0}
               </div>
               <p className="text-gray-600 text-sm">Today</p>
             </div>
@@ -316,7 +325,8 @@ const Dashboard = ({ user, onLogout }) => {
               className="prose prose-green max-w-none"
             >
               <div className="text-gray-700 leading-relaxed whitespace-pre-line bg-white/50 rounded-lg p-4">
-                {dashboardData.aiInsights}
+                {dashboardData.aiInsights ||
+                  "No AI insights available yet. Start tracking your health data to get personalized recommendations."}
               </div>
             </motion.div>
           </motion.div>

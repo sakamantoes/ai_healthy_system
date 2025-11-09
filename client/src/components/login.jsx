@@ -17,7 +17,6 @@ const Login = ({ onLogin }) => {
       [e.target.name]: e.target.value,
     });
   };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -32,22 +31,41 @@ const Login = ({ onLogin }) => {
         body: JSON.stringify(formData),
       });
 
+      // Check if the response is OK first
+      if (!response.ok) {
+        // If response is not OK, try to get error message from response
+        const errorText = await response.text();
+        let errorMessage = `HTTP error! status: ${response.status}`;
+
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.message || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+
+        throw new Error(errorMessage);
+      }
+
       const result = await response.json();
 
       if (result.success) {
         onLogin(result.data.token, result.data.user);
       } else {
-        throw new Error(result.message);
+        throw new Error(result.message || "Login failed");
       }
     } catch (error) {
-      setError(error.message);
+      console.error("Login error details:", error);
+      setError(
+        error.message || "Failed to connect to server. Please try again."
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -80,7 +98,7 @@ const Login = ({ onLogin }) => {
             className="bg-red-50 border border-red-200 rounded-lg p-4"
           >
             <div className="flex">
-              <div className="flex-shrink-0">
+              <div className="">
                 <svg
                   className="h-5 w-5 text-red-400"
                   viewBox="0 0 20 20"

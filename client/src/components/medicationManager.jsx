@@ -30,7 +30,15 @@ const MedicationManager = ({ user }) => {
 
       if (response.ok) {
         const result = await response.json();
-        setMedications(result.data || []);
+        // Ensure times is always an array
+        const medicationsWithSafeTimes =
+          result.data?.map((med) => ({
+            ...med,
+            times: Array.isArray(med.times)
+              ? med.times
+              : [med.times || "08:00"],
+          })) || [];
+        setMedications(medicationsWithSafeTimes);
       }
     } catch (error) {
       console.error("Error fetching medications:", error);
@@ -49,12 +57,21 @@ const MedicationManager = ({ user }) => {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          times: formData.times.filter((time) => time.trim() !== ""), // Remove empty times
+        }),
       });
 
       if (response.ok) {
         const result = await response.json();
-        setMedications((prev) => [result.data, ...prev]);
+        const newMedication = {
+          ...result.data,
+          times: Array.isArray(result.data.times)
+            ? result.data.times
+            : [result.data.times || "08:00"],
+        };
+        setMedications((prev) => [newMedication, ...prev]);
         setShowForm(false);
         setFormData({
           name: "",
@@ -77,10 +94,12 @@ const MedicationManager = ({ user }) => {
   };
 
   const removeTimeSlot = (index) => {
-    setFormData((prev) => ({
-      ...prev,
-      times: prev.times.filter((_, i) => i !== index),
-    }));
+    if (formData.times.length > 1) {
+      setFormData((prev) => ({
+        ...prev,
+        times: prev.times.filter((_, i) => i !== index),
+      }));
+    }
   };
 
   const updateTimeSlot = (index, value) => {
@@ -91,11 +110,18 @@ const MedicationManager = ({ user }) => {
   };
 
   const getNextDoseTime = (times) => {
+    if (!Array.isArray(times) || times.length === 0) {
+      return "No schedule set";
+    }
+
     const now = new Date();
     const currentTime = now.getHours() * 60 + now.getMinutes();
 
     for (let time of times) {
+      if (!time) continue;
       const [hours, minutes] = time.split(":").map(Number);
+      if (isNaN(hours) || isNaN(minutes)) continue;
+
       const slotTime = hours * 60 + minutes;
 
       if (slotTime > currentTime) {
@@ -103,7 +129,18 @@ const MedicationManager = ({ user }) => {
       }
     }
 
-    return `${times[0]} tomorrow`;
+    return `${times[0] || "08:00"} tomorrow`;
+  };
+
+  // Safe function to ensure times is always an array
+  const getSafeTimes = (medication) => {
+    if (Array.isArray(medication.times)) {
+      return medication.times;
+    }
+    if (medication.times) {
+      return [medication.times];
+    }
+    return ["08:00"];
   };
 
   if (loading) {
@@ -152,78 +189,82 @@ const MedicationManager = ({ user }) => {
         {/* Medications Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <AnimatePresence>
-            {medications.map((medication, index) => (
-              <motion.div
-                key={medication.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ delay: index * 0.1 }}
-                className="bg-white rounded-xl shadow-lg p-6 border border-gray-200"
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      <Pill className="text-blue-600" size={24} />
+            {medications.map((medication, index) => {
+              const safeTimes = getSafeTimes(medication);
+
+              return (
+                <motion.div
+                  key={medication.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ delay: index * 0.1 }}
+                  className="bg-white rounded-xl shadow-lg p-6 border border-gray-200"
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <Pill className="text-blue-600" size={24} />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900 text-lg">
+                          {medication.name}
+                        </h3>
+                        <p className="text-gray-600">{medication.dosage}</p>
+                      </div>
                     </div>
+                    <div className="flex space-x-2">
+                      <button className="p-1 hover:bg-gray-100 rounded">
+                        <Edit size={16} className="text-gray-600" />
+                      </button>
+                      <button className="p-1 hover:bg-gray-100 rounded">
+                        <Trash2 size={16} className="text-red-600" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Schedule */}
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-2 text-sm text-gray-600">
+                      <Clock size={16} />
+                      <span>Frequency: {medication.frequency}</span>
+                    </div>
+
                     <div>
-                      <h3 className="font-semibold text-gray-900 text-lg">
-                        {medication.name}
-                      </h3>
-                      <p className="text-gray-600">{medication.dosage}</p>
-                    </div>
-                  </div>
-                  <div className="flex space-x-2">
-                    <button className="p-1 hover:bg-gray-100 rounded">
-                      <Edit size={16} className="text-gray-600" />
-                    </button>
-                    <button className="p-1 hover:bg-gray-100 rounded">
-                      <Trash2 size={16} className="text-red-600" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Schedule */}
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-2 text-sm text-gray-600">
-                    <Clock size={16} />
-                    <span>Frequency: {medication.frequency}</span>
-                  </div>
-
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 mb-2">
-                      Schedule:
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {medication.times.map((time, idx) => (
-                        <span
-                          key={idx}
-                          className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium"
-                        >
-                          {time}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {medication.instructions && (
-                    <div>
-                      <p className="text-sm font-medium text-gray-700 mb-1">
-                        Instructions:
+                      <p className="text-sm font-medium text-gray-700 mb-2">
+                        Schedule:
                       </p>
-                      <p className="text-sm text-gray-600">
-                        {medication.instructions}
-                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {safeTimes.map((time, idx) => (
+                          <span
+                            key={idx}
+                            className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium"
+                          >
+                            {time || "No time set"}
+                          </span>
+                        ))}
+                      </div>
                     </div>
-                  )}
 
-                  <div className="flex items-center space-x-2 text-sm text-blue-600 font-medium">
-                    <Bell size={16} />
-                    <span>Next dose: {getNextDoseTime(medication.times)}</span>
+                    {medication.instructions && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-700 mb-1">
+                          Instructions:
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {medication.instructions}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex items-center space-x-2 text-sm text-blue-600 font-medium">
+                      <Bell size={16} />
+                      <span>Next dose: {getNextDoseTime(safeTimes)}</span>
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              );
+            })}
           </AnimatePresence>
         </div>
 
@@ -346,6 +387,7 @@ const MedicationManager = ({ user }) => {
                               updateTimeSlot(index, e.target.value)
                             }
                             className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                            required
                           />
                           {formData.times.length > 1 && (
                             <button
