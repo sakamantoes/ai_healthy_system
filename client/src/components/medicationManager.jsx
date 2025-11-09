@@ -1,6 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Pill, Clock, Calendar, Edit, Trash2, Bell } from "lucide-react";
+import {
+  Plus,
+  Pill,
+  Clock,
+  Calendar,
+  Edit,
+  Trash2,
+  Bell,
+  ArrowLeftCircle,
+  Link,
+} from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const MedicationManager = ({ user }) => {
   const [medications, setMedications] = useState([]);
@@ -13,6 +24,12 @@ const MedicationManager = ({ user }) => {
     times: ["08:00"],
     instructions: "",
   });
+
+  const navigate = useNavigate();
+
+  const goToDashboard = () => {
+    navigate("/dashboard");
+  };
 
   useEffect(() => {
     fetchMedications();
@@ -161,6 +178,8 @@ const MedicationManager = ({ user }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
       <div className="max-w-6xl mx-auto">
+        <ArrowLeftCircle size={27} onClick={goToDashboard} />
+
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}

@@ -8,7 +8,9 @@ import {
   CheckCircle,
   Trash2,
   Edit,
+  ArrowLeftCircle,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const ReminderSystem = ({ user }) => {
   const [reminders, setReminders] = useState([]);
@@ -24,6 +26,11 @@ const ReminderSystem = ({ user }) => {
     recurrencePattern: "daily",
     priority: "medium",
   });
+  const navigate = useNavigate();
+
+  const goToDashboard = () => {
+    navigate("/dashboard");
+  };
 
   useEffect(() => {
     fetchReminders();
@@ -161,6 +168,7 @@ const ReminderSystem = ({ user }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
       <div className="max-w-6xl mx-auto">
+        <ArrowLeftCircle size={27} onClick={goToDashboard} />
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}

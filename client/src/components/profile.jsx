@@ -1,6 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { User, Mail, Calendar, Heart, Bell, Save, Edit } from "lucide-react";
+import {
+  User,
+  Mail,
+  Calendar,
+  Heart,
+  Bell,
+  Save,
+  Edit,
+  ArrowLeftCircle,
+} from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const Profile = ({ user, onUpdate }) => {
   const [profile, setProfile] = useState({
@@ -18,6 +28,11 @@ const Profile = ({ user, onUpdate }) => {
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [error, setError] = useState("");
+  const navigate = useNavigate();
+
+  const goToDashboard = () => {
+    navigate("/dashboard");
+  };
 
   useEffect(() => {
     fetchProfile();
@@ -141,6 +156,7 @@ const Profile = ({ user, onUpdate }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
       <div className="max-w-6xl mx-auto">
+        <ArrowLeftCircle size={27} onClick={goToDashboard} />
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}

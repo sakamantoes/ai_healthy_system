@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const cron = require("node-cron");
 const axios = require("axios");
+const { Op } = require("sequelize");
 require("dotenv").config();
 
 const {
@@ -1078,13 +1079,14 @@ Consider keeping a health journal to track what works best for you. Every small 
 // Reminder Routes
 app.get("/api/reminders", authenticateToken, async (req, res) => {
   try {
-    const { upcoming = false } = req.query;
+    const { upcoming } = req.query;
 
     let whereClause = { UserId: req.user.id };
 
-    if (upcoming) {
+    // Query parameters come as strings, so check for "true"
+    if (upcoming === "true") {
       whereClause.scheduledTime = {
-        [sequelize.Op.gte]: new Date(),
+        [Op.gte]: new Date(), // ✅ FIXED: Use Op instead of sequelize.Op
       };
     }
 

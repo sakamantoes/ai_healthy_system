@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Target, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import {
+  Plus,
+  Target,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  ArrowLeftCircle,
+} from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const GoalSetter = ({ user }) => {
   const [goals, setGoals] = useState([]);
@@ -15,6 +23,11 @@ const GoalSetter = ({ user }) => {
     deadline: "",
     priority: "medium",
   });
+  const navigate = useNavigate();
+
+  const goToDashboard = () => {
+    navigate("/dashboard");
+  };
 
   useEffect(() => {
     fetchGoals();
@@ -139,6 +152,7 @@ const GoalSetter = ({ user }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
       <div className="max-w-6xl mx-auto">
+        <ArrowLeftCircle size={27} onClick={goToDashboard} />
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}

@@ -157,7 +157,7 @@ const Dashboard = ({ user, onLogout }) => {
               animate={{ x: 0, opacity: 1 }}
               transition={{ delay: 0.2 }}
             >
-              <h1 className="text-2xl font-bold text-gray-900">
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
                 Health Dashboard
               </h1>
               <p className="text-gray-600 mt-1">
@@ -200,7 +200,7 @@ const Dashboard = ({ user, onLogout }) => {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={onLogout}
-                className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-lg transition-colors"
+                className="flex items-center sm:space-x-2 space-x-0.5 sm:px-4 px-2.5 sm:py-2 py-1 bg-red-600 text-white hover:bg-red-700 rounded-lg transition-colors"
               >
                 <LogOut className="h-5 w-5" />
                 <span className="font-medium">Logout</span>
