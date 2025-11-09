@@ -150,24 +150,13 @@ const Dashboard = ({ user, onLogout }) => {
         animate={{ y: 0, opacity: 1 }}
         className="bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-10"
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="sm:max-w-7xl max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
             <motion.div
               initial={{ x: -20, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               transition={{ delay: 0.2 }}
-            >
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
-                Health Dashboard
-              </h1>
-              <p className="text-gray-600 mt-1">
-                Welcome back,{" "}
-                <span className="font-semibold text-indigo-600">
-                  {user?.name}
-                </span>
-                ! 👋
-              </p>
-            </motion.div>
+            ></motion.div>
 
             <motion.div
               initial={{ x: 20, opacity: 0 }}
@@ -233,6 +222,17 @@ const Dashboard = ({ user, onLogout }) => {
           className="space-y-8"
         >
           {/* Stats Grid */}
+          <motion.div variants={itemVariants} className="gap-6">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900"></h1>
+            <p className="text-gray-600">
+              Welcome back,{" "}
+              <span className="font-semibold text-indigo-600">
+                {user?.name}
+              </span>
+              ! 👋
+            </p>
+          </motion.div>
+
           <motion.div
             variants={itemVariants}
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
