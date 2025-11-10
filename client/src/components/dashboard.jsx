@@ -156,7 +156,12 @@ const Dashboard = ({ user, onLogout }) => {
               initial={{ x: -20, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               transition={{ delay: 0.2 }}
-            ></motion.div>
+            >
+              {/* <img src="public/logo.png" className="w-[200px]" /> */}
+              <h1 className="text-2xl font-semibold text-indigo-500 uppercase">
+                health tracker
+              </h1>
+            </motion.div>
 
             <motion.div
               initial={{ x: 20, opacity: 0 }}
