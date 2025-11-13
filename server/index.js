@@ -5,12 +5,12 @@ const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const cron = require("node-cron");
 const axios = require("axios");
-const { Op } = require("sequelize");
 require("dotenv").config();
 
 const {
   sequelize,
   User,
+  Preference,
   Medication,
   Symptom,
   HealthGoal,
@@ -23,7 +23,7 @@ const app = express();
 // Middleware
 app.use(
   cors({
-    origin: process.env.APP_URL || "http://localhost:5173",
+    origin: process.env.APP_URL || "http://localhost:3000",
     credentials: true,
   })
 );
@@ -56,39 +56,15 @@ class DeepSeekAIService {
   constructor() {
     this.apiKey = process.env.DEEPSEEK_API_KEY;
     this.baseURL = "https://api.deepseek.com/v1/chat/completions";
-
-    // Debug: Check if API key is loaded
-    console.log(
-      "🔑 DeepSeek API Key Status:",
-      this.apiKey ? "✅ Loaded" : "❌ Missing"
-    );
-    if (this.apiKey && this.apiKey.startsWith("sk-")) {
-      console.log("✅ API Key format looks correct");
-    } else {
-      console.warn("⚠️  API Key may be invalid or missing");
-    }
   }
 
   async generateHealthRecommendation(userData, healthData) {
     try {
-      // Enhanced API key validation
-      if (!this.apiKey || this.apiKey === "your_deepseek_key_here") {
-        console.log(
-          "🔧 Using fallback recommendations (API key not configured)"
-        );
-        return this.getFallbackRecommendation(healthData);
-      }
-
-      if (!this.apiKey.startsWith("sk-")) {
-        console.warn("⚠️  API Key format may be invalid");
-        return this.getFallbackRecommendation(healthData);
+      if (!this.apiKey) {
+        throw new Error("DeepSeek API key not configured");
       }
 
       const prompt = this.createHealthAnalysisPrompt(userData, healthData);
-
-      console.log("🔄 Calling DeepSeek API...");
-      console.log("📊 User condition:", userData.condition);
-      console.log("📈 Adherence rate:", healthData.adherenceRate + "%");
 
       const response = await axios.post(
         this.baseURL,
@@ -98,8 +74,8 @@ class DeepSeekAIService {
             {
               role: "system",
               content: `You are a compassionate, knowledgeable health advisor specializing in chronic disease management. 
-              Provide personalized, practical, and motivational health recommendations. Include specific food suggestions to stay healthy. 
-              Always maintain a supportive tone and focus on actionable advice. Be specific and relevant to the user's condition.`,
+            Provide personalized, practical, and motivational health recommendations. Always maintain a supportive tone 
+            and focus on actionable advice. Be specific and relevant to the user's condition.`,
             },
             {
               role: "user",
@@ -119,34 +95,16 @@ class DeepSeekAIService {
         }
       );
 
-      console.log("✅ DeepSeek API Response Status:", response.status);
-
       if (response.data.choices && response.data.choices[0]) {
-        const content = response.data.choices[0].message.content;
-        console.log("📝 AI Response length:", content.length, "characters");
-        return content;
+        return response.data.choices[0].message.content;
       } else {
-        console.error("❌ Invalid response format from DeepSeek API");
         throw new Error("Invalid response format from DeepSeek API");
       }
     } catch (error) {
-      console.error("❌ DeepSeek API Error:");
-      console.error("   Message:", error.message);
-      console.error("   Code:", error.code);
-      if (error.response) {
-        console.error("   Status:", error.response.status);
-        console.error("   Data:", error.response.data);
-      }
-
-      // Provide helpful error messages based on the error type
-      if (error.code === "ENOTFOUND") {
-        console.log("🌐 Network error - check internet connection");
-      } else if (error.response?.status === 401) {
-        console.log("🔑 API key may be invalid or expired");
-      } else if (error.response?.status === 429) {
-        console.log("⏰ Rate limit exceeded - try again later");
-      }
-
+      console.error(
+        "DeepSeek API Error:",
+        error.response?.data || error.message
+      );
       return this.getFallbackRecommendation(healthData);
     }
   }
@@ -184,7 +142,6 @@ Please provide a comprehensive health recommendation including:
 3. Advice on medication management and symptom monitoring
 4. One positive affirmation about their health journey
 5. Any important reminders or warnings based on their symptoms
-6. Specific foods to eat to stay healthy with ${userData.condition}
 
 Keep the response under 300 words, compassionate, and practical. Focus on empowerment and realistic steps.
     `;
@@ -192,42 +149,29 @@ Keep the response under 300 words, compassionate, and practical. Focus on empowe
 
   getFallbackRecommendation(healthData) {
     const adherence = healthData.adherenceRate;
-    const condition = healthData.condition || "your condition";
 
     if (adherence >= 80) {
-      return `🌟 Excellent work! Your ${adherence}% adherence rate shows incredible commitment to your health journey with ${condition}. 
+      return `Excellent work! Your ${adherence}% adherence rate shows incredible commitment to your health journey. 
 
 Key Recommendations:
-1. Continue your excellent medication routine - consistency is key
+1. Continue your excellent medication routine - consistency is key for managing chronic conditions
 2. Maintain your symptom tracking - this helps identify patterns early
 3. Consider adding light physical activity if approved by your doctor
-4. Stay hydrated and maintain a balanced diet rich in fruits and vegetables
-
-Healthy Foods to Focus On:
-• Leafy greens and colorful vegetables
-• Lean proteins like fish and chicken
-• Whole grains and fiber-rich foods
-• Plenty of water throughout the day
+4. Stay hydrated and maintain a balanced diet
 
 Remember: "Your dedication today builds a healthier tomorrow." Keep up the amazing work!`;
     } else if (adherence >= 50) {
-      return `📊 You're making good progress with your ${adherence}% adherence rate in managing ${condition}. 
+      return `You're making good progress with your health management! 
 
 To improve further:
-1. Try setting medication reminders to boost your consistency
+1. Try setting medication reminders to boost your ${adherence}% adherence rate
 2. Record symptoms daily to better understand your condition patterns
 3. Break down health goals into smaller, achievable steps
 4. Celebrate small victories - each dose taken is a success
 
-Nutrition Tips:
-• Eat regular, balanced meals
-• Include anti-inflammatory foods
-• Stay hydrated with water and herbal teas
-• Limit processed foods and sugars
-
 You're building lasting healthy habits. Every step forward counts!`;
     } else {
-      return `🤗 We understand managing ${condition} can be challenging sometimes. Let's focus on fresh starts:
+      return `We understand managing health can be challenging sometimes. Let's focus on fresh starts:
 
 Today's Simple Steps:
 1. Take your next scheduled medication - set a phone reminder if needed
@@ -235,17 +179,87 @@ Today's Simple Steps:
 3. Record any symptoms you're experiencing
 4. Remember why you started - your health matters
 
-Quick Healthy Eating:
-• Start with a nutritious breakfast
-• Snack on fruits and nuts
-• Choose whole foods over processed
-• Listen to your body's hunger cues
-
 "You don't have to be perfect, just persistent." Let's take this one step at a time together.`;
     }
   }
 
-  // ... keep the rest of your existing methods (analyzeSymptoms, calculateRiskLevel, etc.)
+  async analyzeSymptoms(symptoms, userCondition) {
+    try {
+      if (!this.apiKey) {
+        return this.analyzeSymptomsFallback(symptoms);
+      }
+
+      const symptomDetails = symptoms
+        .map(
+          (s) =>
+            `${s.type}: severity ${s.severity}/10, ${
+              s.description || "No additional details"
+            }`
+        )
+        .join("\n");
+
+      const response = await axios.post(
+        this.baseURL,
+        {
+          model: "deepseek-chat",
+          messages: [
+            {
+              role: "system",
+              content: `You are a medical assistant analyzing symptoms for chronic disease management. 
+            Provide risk assessment and practical recommendations. Always emphasize consulting healthcare 
+            providers for serious symptoms. Be cautious and supportive.`,
+            },
+            {
+              role: "user",
+              content: `Patient with ${userCondition} reports these symptoms:\n${symptomDetails}\n\nPlease analyze potential risks and provide recommendations.`,
+            },
+          ],
+          max_tokens: 500,
+          temperature: 0.5,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const analysis = response.data.choices[0].message.content;
+      const riskLevel = this.calculateRiskLevel(symptoms);
+
+      return { analysis, riskLevel };
+    } catch (error) {
+      console.error("DeepSeek Symptom Analysis Error:", error);
+      return this.analyzeSymptomsFallback(symptoms);
+    }
+  }
+
+  calculateRiskLevel(symptoms) {
+    const severeCount = symptoms.filter((s) => s.severity >= 8).length;
+    const moderateCount = symptoms.filter(
+      (s) => s.severity >= 5 && s.severity < 8
+    ).length;
+
+    if (severeCount > 0) return "high";
+    if (moderateCount >= 2 || symptoms.length >= 3) return "medium";
+    return "low";
+  }
+
+  analyzeSymptomsFallback(symptoms) {
+    const riskLevel = this.calculateRiskLevel(symptoms);
+
+    const recommendations = {
+      high: `URGENT: We've detected severe symptoms that require immediate medical attention. Please contact your healthcare provider or visit urgent care right away. Do not delay seeking medical help for these symptoms.`,
+      medium: `CAUTION: Your symptoms suggest you should monitor closely and consider contacting your healthcare provider if they persist or worsen. Keep tracking your symptoms and rest adequately.`,
+      low: `Your symptoms appear manageable with self-care. Continue monitoring and maintain your regular health routines. Contact your doctor if symptoms change or concern you.`,
+    };
+
+    return {
+      analysis: `Based on your reported symptoms, our assessment indicates ${riskLevel} risk. ${recommendations[riskLevel]}`,
+      riskLevel,
+    };
+  }
 }
 
 const deepSeekService = new DeepSeekAIService();
@@ -283,70 +297,353 @@ const authenticateToken = async (req, res, next) => {
   }
 };
 
-// Daily Alert System
-async function sendDailyHealthAlerts() {
-  try {
-    console.log("🔄 Starting daily health alerts...");
+// ============================================================================
+// CRON JOBS - TESTING & PRODUCTION
+// ============================================================================
 
-    const users = await User.findAll({
-      where: {
-        "$preferences.dailyAlerts$": true,
-      },
-      include: [
-        { model: Medication, where: { isActive: true }, required: false },
-        {
-          model: Reminder,
-          where: {
-            scheduledTime: {
-              [sequelize.Op.between]: [
-                new Date().setHours(0, 0, 0, 0),
-                new Date().setHours(23, 59, 59, 999),
-              ],
+/**
+ * TEST CRON JOB - Sends emails every 60 seconds for testing
+ */
+const startTestCronJob = () => {
+  console.log("🧪 Starting TEST cron job - Emails every 60 seconds");
+
+  cron.schedule("*/60 * * * * *", async () => {
+    try {
+      console.log("🔄 TEST CRON: Running every 60 seconds...");
+
+      const users = await User.findAll({
+        include: [
+          {
+            model: Preference,
+            where: {
+              dailyHealthAlerts: true,
             },
-            isCompleted: false,
           },
-          required: false,
-        },
-        {
-          model: HealthGoal,
-          where: { isCompleted: false },
-          required: false,
-        },
-      ],
-    });
+        ],
+        limit: 5,
+      });
 
-    let sentCount = 0;
-    let errorCount = 0;
+      console.log(`🔄 TEST CRON: Found ${users.length} users for test alerts`);
 
-    for (const user of users) {
-      try {
-        await sendDailyAlertToUser(user);
-        sentCount++;
+      for (const user of users) {
+        try {
+          await sendTestReminderEmail(user);
+          console.log(`✅ TEST CRON: Test email sent to ${user.email}`);
 
-        // Update last alert sent time
-        await user.update({ lastAlertSent: new Date() });
-
-        // Delay to avoid rate limiting
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      } catch (error) {
-        console.error(
-          `❌ Error sending alert to ${user.email}:`,
-          error.message
-        );
-        errorCount++;
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        } catch (error) {
+          console.error(
+            `❌ TEST CRON: Failed to send test email to ${user.email}:`,
+            error.message
+          );
+        }
       }
+    } catch (error) {
+      console.error("❌ TEST CRON: Error in test cron job:", error);
     }
+  });
+};
 
-    console.log(
-      `✅ Daily health alerts completed: ${sentCount} sent, ${errorCount} failed`
-    );
-  } catch (error) {
-    console.error("❌ Error in daily health alerts:", error);
-  }
+/**
+ * PRODUCTION CRON JOB - Sends emails based on user's preferred time
+ */
+const startProductionCronJob = () => {
+  console.log("🚀 Starting PRODUCTION cron job - User preferred email times");
+
+  // Schedule 1: Daily Health Alerts at user's preferred time
+  cron.schedule("0 * * * *", async () => {
+    try {
+      console.log("🔄 PRODUCTION CRON: Checking for scheduled daily alerts...");
+
+      const currentHour = new Date().getHours();
+      const currentTime = `${currentHour.toString().padStart(2, "0")}:00:00`;
+
+      const users = await User.findAll({
+        include: [
+          {
+            model: Preference,
+            where: {
+              dailyHealthAlerts: true,
+              preferredEmailTime: currentTime,
+            },
+          },
+        ],
+      });
+
+      console.log(
+        `🔄 PRODUCTION CRON: Found ${users.length} users for daily alerts at ${currentTime}`
+      );
+
+      for (const user of users) {
+        try {
+          await sendDailyAlertToUser(user);
+          console.log(`✅ PRODUCTION CRON: Daily alert sent to ${user.email}`);
+
+          await user.update({ lastAlertSent: new Date() });
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        } catch (error) {
+          console.error(
+            `❌ PRODUCTION CRON: Failed to send daily alert to ${user.email}:`,
+            error.message
+          );
+        }
+      }
+    } catch (error) {
+      console.error("❌ PRODUCTION CRON: Error in daily alerts:", error);
+    }
+  });
+
+  // Schedule 2: Medication Reminders - Check every minute
+  cron.schedule("* * * * *", async () => {
+    try {
+      console.log("🔄 PRODUCTION CRON: Checking for medication reminders...");
+
+      const now = new Date();
+      const currentTime = `${now.getHours().toString().padStart(2, "0")}:${now
+        .getMinutes()
+        .toString()
+        .padStart(2, "0")}:00`;
+
+      const medications = await Medication.findAll({
+        where: {
+          isActive: true,
+          sendEmailReminders: true,
+        },
+        include: [
+          {
+            model: User,
+            include: [
+              {
+                model: Preference,
+                where: {
+                  medicationReminders: true,
+                },
+              },
+            ],
+          },
+        ],
+      });
+
+      const medicationsDue = medications.filter((med) => {
+        return med.times.includes(currentTime);
+      });
+
+      console.log(
+        `🔄 PRODUCTION CRON: Found ${medicationsDue.length} medication reminders due`
+      );
+
+      for (const medication of medicationsDue) {
+        try {
+          await sendMedicationReminderEmail(medication.User, medication);
+          console.log(
+            `✅ PRODUCTION CRON: Medication reminder sent for ${medication.name}`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        } catch (error) {
+          console.error(
+            `❌ PRODUCTION CRON: Failed to send medication reminder:`,
+            error.message
+          );
+        }
+      }
+    } catch (error) {
+      console.error(
+        "❌ PRODUCTION CRON: Error in medication reminders:",
+        error
+      );
+    }
+  });
+
+  // Schedule 3: General Reminders - Check every minute
+  cron.schedule("* * * * *", async () => {
+    try {
+      console.log("🔄 PRODUCTION CRON: Checking for general reminders...");
+
+      const now = new Date();
+      const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60000);
+
+      const reminders = await Reminder.findAll({
+        where: {
+          scheduledTime: {
+            [sequelize.Op.between]: [now, fiveMinutesFromNow],
+          },
+          isCompleted: false,
+          sendEmail: true,
+          emailSent: false,
+        },
+        include: [
+          {
+            model: User,
+            include: [
+              {
+                model: Preference,
+                where: {
+                  appointmentReminders: true,
+                },
+              },
+            ],
+          },
+        ],
+      });
+
+      console.log(
+        `🔄 PRODUCTION CRON: Found ${reminders.length} reminders due soon`
+      );
+
+      for (const reminder of reminders) {
+        try {
+          await sendGeneralReminderEmail(reminder.User, reminder);
+          await reminder.update({
+            emailSent: true,
+            emailSentAt: new Date(),
+          });
+          console.log(`✅ PRODUCTION CRON: Reminder sent: ${reminder.title}`);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        } catch (error) {
+          console.error(
+            `❌ PRODUCTION CRON: Failed to send reminder:`,
+            error.message
+          );
+        }
+      }
+    } catch (error) {
+      console.error("❌ PRODUCTION CRON: Error in general reminders:", error);
+    }
+  });
+};
+
+// ============================================================================
+// EMAIL TEMPLATES AND FUNCTIONS
+// ============================================================================
+
+async function sendTestReminderEmail(user) {
+  const mailOptions = {
+    from: `"Health Management System" <${process.env.EMAIL_USER}>`,
+    to: user.email,
+    subject: `🧪 Test Reminder - ${new Date().toLocaleTimeString()}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+          .container { background: white; padding: 30px; border-radius: 10px; max-width: 600px; margin: 0 auto; }
+          .header { background: #4CAF50; color: white; padding: 20px; border-radius: 10px 10px 0 0; margin: -30px -30px 20px -30px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🧪 Test Email</h1>
+          </div>
+          <h2>Hello ${user.name}!</h2>
+          <p>This is a <strong>test email</strong> sent by the Health Management System.</p>
+          <p>Current time: ${new Date().toLocaleString()}</p>
+          <p>If you're receiving this, the email system is working correctly! 🎉</p>
+          <p><em>This test email is sent every 60 seconds during development.</em></p>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+
+  await emailTransporter.sendMail(mailOptions);
+}
+
+async function sendMedicationReminderEmail(user, medication) {
+  const mailOptions = {
+    from: `"Health Management System" <${process.env.EMAIL_USER}>`,
+    to: user.email,
+    subject: `💊 Medication Reminder: ${medication.name}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+          .container { background: white; padding: 30px; border-radius: 10px; max-width: 600px; margin: 0 auto; }
+          .header { background: #ff6b6b; color: white; padding: 20px; border-radius: 10px 10px 0 0; margin: -30px -30px 20px -30px; }
+          .medication-info { background: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>💊 Medication Reminder</h1>
+          </div>
+          <h2>Hello ${user.name}!</h2>
+          <p>It's time to take your medication:</p>
+          
+          <div class="medication-info">
+            <h3>${medication.name}</h3>
+            <p><strong>Dosage:</strong> ${medication.dosage}</p>
+            <p><strong>Instructions:</strong> ${
+              medication.instructions || "Take as prescribed"
+            }</p>
+            <p><strong>Time:</strong> ${new Date().toLocaleTimeString()}</p>
+          </div>
+          
+          <p>Please take your medication as directed by your healthcare provider.</p>
+          <p><em>This is an automated reminder from your Health Management System.</em></p>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+
+  await emailTransporter.sendMail(mailOptions);
+}
+
+async function sendGeneralReminderEmail(user, reminder) {
+  const mailOptions = {
+    from: `"Health Management System" <${process.env.EMAIL_USER}>`,
+    to: user.email,
+    subject: `⏰ Reminder: ${reminder.title}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+          .container { background: white; padding: 30px; border-radius: 10px; max-width: 600px; margin: 0 auto; }
+          .header { background: #4e73df; color: white; padding: 20px; border-radius: 10px 10px 0 0; margin: -30px -30px 20px -30px; }
+          .reminder-info { background: #d1ecf1; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>⏰ Reminder</h1>
+          </div>
+          <h2>Hello ${user.name}!</h2>
+          
+          <div class="reminder-info">
+            <h3>${reminder.title}</h3>
+            <p><strong>Type:</strong> ${reminder.type}</p>
+            <p><strong>Message:</strong> ${reminder.message}</p>
+            <p><strong>Scheduled Time:</strong> ${new Date(
+              reminder.scheduledTime
+            ).toLocaleString()}</p>
+            ${
+              reminder.isRecurring
+                ? `<p><strong>Recurring:</strong> ${reminder.recurrencePattern}</p>`
+                : ""
+            }
+          </div>
+          
+          <p><em>This is an automated reminder from your Health Management System.</em></p>
+        </div>
+      </body>
+      </html>
+    `,
+  };
+
+  await emailTransporter.sendMail(mailOptions);
 }
 
 async function sendDailyAlertToUser(user) {
-  // Calculate adherence rate from goals
+  const preference = await Preference.findOne({ where: { UserId: user.id } });
+
   const goals = await HealthGoal.findAll({
     where: { UserId: user.id },
   });
@@ -355,25 +652,35 @@ async function sendDailyAlertToUser(user) {
   const adherenceRate =
     totalGoals > 0 ? (completedGoals / totalGoals) * 100 : 0;
 
-  // Get health data for AI recommendation
   const recentSymptoms = await Symptom.findAll({
     where: { UserId: user.id },
     order: [["recordedAt", "DESC"]],
     limit: 5,
-    attributes: ["type", "severity", "recordedAt"],
   });
 
   const healthData = {
     adherenceRate,
-    medicationsCount: user.Medications ? user.Medications.length : 0,
+    medicationsCount: await Medication.count({
+      where: { UserId: user.id, isActive: true },
+    }),
     recentSymptomsCount: recentSymptoms.length,
-    activeGoalsCount: user.HealthGoals ? user.HealthGoals.length : 0,
+    activeGoalsCount: totalGoals - completedGoals,
     completedGoalsCount: completedGoals,
-    todayRemindersCount: user.Reminders ? user.Reminders.length : 0,
+    todayRemindersCount: await Reminder.count({
+      where: {
+        UserId: user.id,
+        scheduledTime: {
+          [sequelize.Op.between]: [
+            new Date().setHours(0, 0, 0, 0),
+            new Date().setHours(23, 59, 59, 999),
+          ],
+        },
+        isCompleted: false,
+      },
+    }),
     recentSymptoms: recentSymptoms,
   };
 
-  // Generate AI-powered recommendation
   const aiRecommendation = await deepSeekService.generateHealthRecommendation(
     user,
     healthData
@@ -505,44 +812,6 @@ async function sendDailyAlertToUser(user) {
             </div>
           </div>
 
-          ${
-            user.Medications && user.Medications.length > 0
-              ? `
-            <div class="medication-card">
-              <h3 style="color: #d32f2f;">💊 Today's Medications</h3>
-              ${user.Medications.map(
-                (med) => `
-                <div style="margin: 10px 0; padding: 10px; background: #ffebee; border-radius: 5px;">
-                  <strong>${med.name}</strong> - ${med.dosage}<br>
-                  <small>Times: ${med.times.join(", ")}</small>
-                </div>
-              `
-              ).join("")}
-            </div>
-          `
-              : ""
-          }
-
-          ${
-            user.Reminders && user.Reminders.length > 0
-              ? `
-            <div class="reminder-card">
-              <h3 style="color: #ff9800;">⏰ Today's Reminders</h3>
-              ${user.Reminders.map(
-                (reminder) => `
-                <div style="margin: 8px 0; padding: 8px; background: #fff3e0; border-radius: 5px;">
-                  <strong>${reminder.title}</strong><br>
-                  <small>${new Date(
-                    reminder.scheduledTime
-                  ).toLocaleTimeString()} - ${reminder.message}</small>
-                </div>
-              `
-              ).join("")}
-            </div>
-          `
-              : ""
-          }
-
           <a href="${process.env.APP_URL}/dashboard" class="cta-button">
             Update Health Log
           </a>
@@ -570,38 +839,17 @@ async function sendDailyAlertToUser(user) {
   };
 
   await emailTransporter.sendMail(mailOptions);
-  console.log(`✅ Daily alert sent to ${user.email}`);
 }
 
-// Schedule daily alerts at 8:00 AM
-cron.schedule(
-  process.env.DAILY_ALERT_TIME || "0 8 * * *",
-  sendDailyHealthAlerts
-);
-
-// Manual trigger endpoint for testing
-app.post("/api/send-test-alert", authenticateToken, async (req, res) => {
-  try {
-    await sendDailyAlertToUser(req.user);
-    res.json({
-      success: true,
-      message: "Test alert sent successfully to your email",
-    });
-  } catch (error) {
-    console.error("Test alert error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to send test alert: " + error.message,
-    });
-  }
-});
+// ============================================================================
+// ROUTES - UPDATED FOR NEW MODELS
+// ============================================================================
 
 // Auth Routes
 app.post("/api/register", async (req, res) => {
   try {
     const { name, email, password, age, condition, preferences } = req.body;
 
-    // Validation
     if (!name || !email || !password || !condition) {
       return res.status(400).json({
         success: false,
@@ -609,7 +857,6 @@ app.post("/api/register", async (req, res) => {
       });
     }
 
-    // Check if user already exists
     const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
       return res.status(409).json({
@@ -618,24 +865,28 @@ app.post("/api/register", async (req, res) => {
       });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create user
     const user = await User.create({
       name,
       email,
       password: hashedPassword,
       age,
       condition,
-      preferences: preferences || {
-        dailyAlerts: true,
-        medicationReminders: true,
-        motivationalMessages: true,
-      },
     });
 
-    // Generate token
+    const userPreferences = await Preference.create({
+      UserId: user.id,
+      dailyHealthAlerts: preferences?.dailyHealthAlerts ?? true,
+      medicationReminders: preferences?.medicationReminders ?? true,
+      appointmentReminders: preferences?.appointmentReminders ?? true,
+      symptomTrackingReminders: preferences?.symptomTrackingReminders ?? true,
+      goalProgressUpdates: preferences?.goalProgressUpdates ?? true,
+      motivationalMessages: preferences?.motivationalMessages ?? true,
+      emailFrequency: preferences?.emailFrequency ?? "instant",
+      preferredEmailTime: preferences?.preferredEmailTime ?? "09:00:00",
+    });
+
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
       expiresIn: "7d",
     });
@@ -651,8 +902,8 @@ app.post("/api/register", async (req, res) => {
           email: user.email,
           age: user.age,
           condition: user.condition,
-          preferences: user.preferences,
         },
+        preferences: userPreferences,
       },
     });
   } catch (error) {
@@ -695,6 +946,10 @@ app.post("/api/login", async (req, res) => {
       expiresIn: "7d",
     });
 
+    const preferences = await Preference.findOne({
+      where: { UserId: user.id },
+    });
+
     res.json({
       success: true,
       message: "Login successful",
@@ -706,8 +961,8 @@ app.post("/api/login", async (req, res) => {
           email: user.email,
           age: user.age,
           condition: user.condition,
-          preferences: user.preferences,
         },
+        preferences,
       },
     });
   } catch (error) {
@@ -742,7 +997,8 @@ app.get("/api/medications", authenticateToken, async (req, res) => {
 
 app.post("/api/medications", authenticateToken, async (req, res) => {
   try {
-    const { name, dosage, frequency, times, instructions } = req.body;
+    const { name, dosage, frequency, times, instructions, sendEmailReminders } =
+      req.body;
 
     if (!name || !dosage || !frequency || !times) {
       return res.status(400).json({
@@ -757,6 +1013,7 @@ app.post("/api/medications", authenticateToken, async (req, res) => {
       frequency,
       times,
       instructions,
+      sendEmailReminders: sendEmailReminders ?? true,
       UserId: req.user.id,
     });
 
@@ -770,6 +1027,88 @@ app.post("/api/medications", authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to add medication",
+    });
+  }
+});
+
+app.put("/api/medications/:id", authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      name,
+      dosage,
+      frequency,
+      times,
+      instructions,
+      sendEmailReminders,
+      isActive,
+    } = req.body;
+
+    const medication = await Medication.findOne({
+      where: { id, UserId: req.user.id },
+    });
+
+    if (!medication) {
+      return res.status(404).json({
+        success: false,
+        message: "Medication not found",
+      });
+    }
+
+    await medication.update({
+      name: name || medication.name,
+      dosage: dosage || medication.dosage,
+      frequency: frequency || medication.frequency,
+      times: times || medication.times,
+      instructions:
+        instructions !== undefined ? instructions : medication.instructions,
+      sendEmailReminders:
+        sendEmailReminders !== undefined
+          ? sendEmailReminders
+          : medication.sendEmailReminders,
+      isActive: isActive !== undefined ? isActive : medication.isActive,
+    });
+
+    res.json({
+      success: true,
+      message: "Medication updated successfully",
+      data: medication,
+    });
+  } catch (error) {
+    console.error("Update medication error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update medication",
+    });
+  }
+});
+
+app.delete("/api/medications/:id", authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const medication = await Medication.findOne({
+      where: { id, UserId: req.user.id },
+    });
+
+    if (!medication) {
+      return res.status(404).json({
+        success: false,
+        message: "Medication not found",
+      });
+    }
+
+    await medication.destroy();
+
+    res.json({
+      success: true,
+      message: "Medication deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete medication error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete medication",
     });
   }
 });
@@ -795,7 +1134,6 @@ app.post("/api/symptoms", authenticateToken, async (req, res) => {
       UserId: req.user.id,
     });
 
-    // Get recent symptoms for AI analysis
     const recentSymptoms = await Symptom.findAll({
       where: { UserId: req.user.id },
       order: [["recordedAt", "DESC"]],
@@ -863,7 +1201,6 @@ app.get("/api/goals", authenticateToken, async (req, res) => {
     const adherenceRate =
       totalGoals > 0 ? (completedGoals / totalGoals) * 100 : 0;
 
-    // Generate AI recommendation based on goals progress
     const healthData = {
       adherenceRate,
       activeGoalsCount: totalGoals - completedGoals,
@@ -903,6 +1240,7 @@ app.post("/api/goals", authenticateToken, async (req, res) => {
       unit,
       deadline,
       priority,
+      sendProgressEmails,
     } = req.body;
 
     if (!title || !category || !targetValue) {
@@ -920,6 +1258,7 @@ app.post("/api/goals", authenticateToken, async (req, res) => {
       unit,
       deadline,
       priority,
+      sendProgressEmails: sendProgressEmails ?? true,
       UserId: req.user.id,
     });
 
@@ -937,141 +1276,42 @@ app.post("/api/goals", authenticateToken, async (req, res) => {
   }
 });
 
-// AI Insights Route
-// AI Insights Route - FIXED VERSION
-app.get("/api/ai-insights", authenticateToken, async (req, res) => {
+app.put("/api/goals/:id", authenticateToken, async (req, res) => {
   try {
-    const user = req.user;
-    console.log(
-      `🔍 Generating AI insights for user: ${user.name} (${user.id})`
-    );
+    const { id } = req.params;
+    const { currentValue, isCompleted, sendProgressEmails } = req.body;
 
-    const [medications, symptoms, goals, reminders] = await Promise.all([
-      Medication.findAll({ where: { UserId: user.id, isActive: true } }),
-      Symptom.findAll({
-        where: { UserId: user.id },
-        order: [["recordedAt", "DESC"]],
-        limit: 5,
-      }),
-      HealthGoal.findAll({ where: { UserId: user.id } }),
-      Reminder.findAll({
-        where: {
-          UserId: user.id,
-          scheduledTime: {
-            [sequelize.Op.between]: [
-              new Date().setHours(0, 0, 0, 0),
-              new Date().setHours(23, 59, 59, 999),
-            ],
-          },
-          isCompleted: false,
-        },
-      }),
-    ]);
-
-    const totalGoals = goals.length;
-    const completedGoals = goals.filter((g) => g.isCompleted).length;
-    const adherenceRate =
-      totalGoals > 0 ? (completedGoals / totalGoals) * 100 : 0;
-
-    const healthData = {
-      adherenceRate,
-      medicationsCount: medications.length,
-      recentSymptomsCount: symptoms.length,
-      activeGoalsCount: totalGoals - completedGoals,
-      completedGoalsCount: completedGoals,
-      todayRemindersCount: reminders.length,
-      recentSymptoms: symptoms,
-      condition: user.condition,
-    };
-
-    console.log("📊 Health data for AI:", {
-      user: user.name,
-      condition: user.condition,
-      adherence: `${adherenceRate}%`,
-      medications: medications.length,
-      symptoms: symptoms.length,
-      goals: `${completedGoals}/${totalGoals} completed`,
+    const goal = await HealthGoal.findOne({
+      where: { id, UserId: req.user.id },
     });
 
-    // Generate AI insights with timeout and better error handling
-    console.log("🔄 Calling DeepSeek API for personalized insights...");
+    if (!goal) {
+      return res.status(404).json({
+        success: false,
+        message: "Goal not found",
+      });
+    }
 
-    const aiInsights = await Promise.race([
-      deepSeekService.generateHealthRecommendation(user, healthData),
-      new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error("AI service timeout after 15 seconds")),
-          15000
-        )
-      ),
-    ]);
-
-    console.log("✅ AI insights generated successfully");
-    console.log("📝 Insights length:", aiInsights.length, "characters");
+    await goal.update({
+      currentValue:
+        currentValue !== undefined ? currentValue : goal.currentValue,
+      isCompleted: isCompleted !== undefined ? isCompleted : goal.isCompleted,
+      sendProgressEmails:
+        sendProgressEmails !== undefined
+          ? sendProgressEmails
+          : goal.sendProgressEmails,
+    });
 
     res.json({
       success: true,
-      message: "AI insights generated successfully",
-      data: {
-        aiInsights,
-        healthData: {
-          ...healthData,
-          totalGoals,
-          completedGoals,
-          medications: medications.map((med) => ({
-            name: med.name,
-            dosage: med.dosage,
-            frequency: med.frequency,
-          })),
-          recentSymptoms: symptoms.map((symptom) => ({
-            type: symptom.type,
-            severity: symptom.severity,
-            recordedAt: symptom.recordedAt,
-          })),
-          upcomingReminders: reminders.map((reminder) => ({
-            title: reminder.title,
-            scheduledTime: reminder.scheduledTime,
-            type: reminder.type,
-          })),
-        },
-        generatedAt: new Date().toISOString(),
-        source: "deepseek-ai",
-      },
+      message: "Goal updated successfully",
+      data: goal,
     });
   } catch (error) {
-    console.error("❌ AI insights error:", error.message);
-
-    // More detailed fallback based on available user data
-    const user = req.user;
-    const fallbackInsights = `Hello ${user.name}! I'm here to support your journey with ${user.condition}. 
-
-While we're optimizing your AI experience, here are some general wellness tips:
-
-🌱 Daily Wellness Foundation:
-• Maintain consistent medication routines
-• Track symptoms to identify patterns
-• Stay hydrated and eat balanced meals
-• Get adequate rest and gentle movement
-
-📊 Your Health Management:
-Keep up with your medication schedule and regular check-ins. Remember that consistency is key to managing ${user.condition} effectively.
-
-💡 Personalized Tip: 
-Consider keeping a health journal to track what works best for you. Every small step forward is progress worth celebrating!
-
-"Your health journey is unique - celebrate every victory along the way!"`;
-
-    res.json({
-      success: true,
-      message: "AI insights generated with fallback content",
-      data: {
-        aiInsights: fallbackInsights,
-        healthData: {},
-        note: "Using enhanced fallback insights - AI service temporarily unavailable",
-        fallbackReason: error.message,
-        generatedAt: new Date().toISOString(),
-        source: "fallback-system",
-      },
+    console.error("Update goal error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update goal",
     });
   }
 });
@@ -1079,14 +1319,13 @@ Consider keeping a health journal to track what works best for you. Every small 
 // Reminder Routes
 app.get("/api/reminders", authenticateToken, async (req, res) => {
   try {
-    const { upcoming } = req.query;
+    const { upcoming = false } = req.query;
 
     let whereClause = { UserId: req.user.id };
 
-    // Query parameters come as strings, so check for "true"
-    if (upcoming === "true") {
+    if (upcoming) {
       whereClause.scheduledTime = {
-        [Op.gte]: new Date(), // ✅ FIXED: Use Op instead of sequelize.Op
+        [sequelize.Op.gte]: new Date(),
       };
     }
 
@@ -1118,6 +1357,7 @@ app.post("/api/reminders", authenticateToken, async (req, res) => {
       isRecurring,
       recurrencePattern,
       priority,
+      sendEmail,
     } = req.body;
 
     if (!type || !title || !message || !scheduledTime) {
@@ -1135,6 +1375,7 @@ app.post("/api/reminders", authenticateToken, async (req, res) => {
       isRecurring,
       recurrencePattern,
       priority,
+      sendEmail: sendEmail ?? true,
       UserId: req.user.id,
     });
 
@@ -1148,6 +1389,42 @@ app.post("/api/reminders", authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to create reminder",
+    });
+  }
+});
+
+app.put("/api/reminders/:id", authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isCompleted, sendEmail } = req.body;
+
+    const reminder = await Reminder.findOne({
+      where: { id, UserId: req.user.id },
+    });
+
+    if (!reminder) {
+      return res.status(404).json({
+        success: false,
+        message: "Reminder not found",
+      });
+    }
+
+    await reminder.update({
+      isCompleted:
+        isCompleted !== undefined ? isCompleted : reminder.isCompleted,
+      sendEmail: sendEmail !== undefined ? sendEmail : reminder.sendEmail,
+    });
+
+    res.json({
+      success: true,
+      message: "Reminder updated successfully",
+      data: reminder,
+    });
+  } catch (error) {
+    console.error("Update reminder error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update reminder",
     });
   }
 });
@@ -1214,10 +1491,63 @@ app.get("/api/health-metrics", authenticateToken, async (req, res) => {
   }
 });
 
-// User Profile Route
+// Preference Routes
+app.get("/api/preferences", authenticateToken, async (req, res) => {
+  try {
+    const preferences = await Preference.findOne({
+      where: { UserId: req.user.id },
+    });
+
+    res.json({
+      success: true,
+      data: preferences,
+    });
+  } catch (error) {
+    console.error("Get preferences error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch preferences",
+    });
+  }
+});
+
+app.put("/api/preferences", authenticateToken, async (req, res) => {
+  try {
+    const preferences = await Preference.findOne({
+      where: { UserId: req.user.id },
+    });
+
+    if (!preferences) {
+      return res.status(404).json({
+        success: false,
+        message: "Preferences not found",
+      });
+    }
+
+    await preferences.update(req.body);
+
+    res.json({
+      success: true,
+      message: "Preferences updated successfully",
+      data: preferences,
+    });
+  } catch (error) {
+    console.error("Update preferences error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update preferences",
+    });
+  }
+});
+
+// User Profile Routes
 app.get("/api/profile", authenticateToken, async (req, res) => {
   try {
     const user = req.user;
+    const preferences = await Preference.findOne({
+      where: { UserId: user.id },
+    });
+
     res.json({
       success: true,
       data: {
@@ -1227,9 +1557,11 @@ app.get("/api/profile", authenticateToken, async (req, res) => {
           email: user.email,
           age: user.age,
           condition: user.condition,
-          preferences: user.preferences,
           lastAlertSent: user.lastAlertSent,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
         },
+        preferences,
       },
     });
   } catch (error) {
@@ -1243,13 +1575,16 @@ app.get("/api/profile", authenticateToken, async (req, res) => {
 
 app.put("/api/profile", authenticateToken, async (req, res) => {
   try {
-    const { name, age, condition, preferences } = req.body;
+    const { name, age, condition } = req.body;
 
     await req.user.update({
       name: name || req.user.name,
       age: age !== undefined ? age : req.user.age,
       condition: condition || req.user.condition,
-      preferences: preferences || req.user.preferences,
+    });
+
+    const preferences = await Preference.findOne({
+      where: { UserId: req.user.id },
     });
 
     res.json({
@@ -1262,8 +1597,8 @@ app.put("/api/profile", authenticateToken, async (req, res) => {
           email: req.user.email,
           age: req.user.age,
           condition: req.user.condition,
-          preferences: req.user.preferences,
         },
+        preferences,
       },
     });
   } catch (error) {
@@ -1275,107 +1610,128 @@ app.put("/api/profile", authenticateToken, async (req, res) => {
   }
 });
 
-// Error handling middleware
-app.use((error, req, res, next) => {
-  console.error("Unhandled error:", error);
-  res.status(500).json({
-    success: false,
-    message: "Internal server error",
-  });
-});
-
-// Test DeepSeek API route
-app.get("/api/test", authenticateToken, async (req, res) => {
+// AI Insights Route
+app.get("/api/ai-insights", authenticateToken, async (req, res) => {
   try {
-    console.log("🧪 Testing DeepSeek API configuration...");
+    const user = req.user;
 
-    const testData = {
-      name: "Test User",
-      age: 35,
-      condition: "Diabetes",
-      createdAt: new Date(),
+    const [medications, symptoms, goals, reminders] = await Promise.all([
+      Medication.findAll({ where: { UserId: user.id, isActive: true } }),
+      Symptom.findAll({
+        where: { UserId: user.id },
+        order: [["recordedAt", "DESC"]],
+        limit: 5,
+      }),
+      HealthGoal.findAll({ where: { UserId: user.id } }),
+      Reminder.findAll({
+        where: {
+          UserId: user.id,
+          scheduledTime: {
+            [sequelize.Op.between]: [
+              new Date().setHours(0, 0, 0, 0),
+              new Date().setHours(23, 59, 59, 999),
+            ],
+          },
+          isCompleted: false,
+        },
+      }),
+    ]);
+
+    const totalGoals = goals.length;
+    const completedGoals = goals.filter((g) => g.isCompleted).length;
+    const adherenceRate =
+      totalGoals > 0 ? (completedGoals / totalGoals) * 100 : 0;
+
+    const healthData = {
+      adherenceRate,
+      medicationsCount: medications.length,
+      recentSymptomsCount: symptoms.length,
+      activeGoalsCount: totalGoals - completedGoals,
+      completedGoalsCount: completedGoals,
+      todayRemindersCount: reminders.length,
+      recentSymptoms: symptoms,
     };
 
-    const testHealthData = {
-      adherenceRate: 75,
-      medicationsCount: 2,
-      recentSymptomsCount: 1,
-      activeGoalsCount: 3,
-      completedGoalsCount: 1,
-      todayRemindersCount: 2,
-      recentSymptoms: [{ type: "Headache", severity: 3 }],
-      condition: "Diabetes",
-    };
-
-    console.log("🔑 API Key present:", !!process.env.DEEPSEEK_API_KEY);
-    console.log(
-      "🔑 API Key starts with sk-:",
-      process.env.DEEPSEEK_API_KEY?.startsWith("sk-")
-    );
-
-    const recommendation = await deepSeekService.generateHealthRecommendation(
-      testData,
-      testHealthData
+    const aiInsights = await deepSeekService.generateHealthRecommendation(
+      user,
+      healthData
     );
 
     res.json({
       success: true,
-      message: "DeepSeek API test successful",
-      apiKeyConfigured: !!process.env.DEEPSEEK_API_KEY,
-      apiKeyValid: process.env.DEEPSEEK_API_KEY?.startsWith("sk-"),
-      recommendation: recommendation.substring(0, 200) + "...",
-      fullLength: recommendation.length,
+      data: {
+        aiInsights,
+        healthData,
+      },
     });
   } catch (error) {
+    console.error("AI insights error:", error);
     res.status(500).json({
       success: false,
-      message: "DeepSeek API test failed: " + error.message,
-      apiKeyConfigured: !!process.env.DEEPSEEK_API_KEY,
-      apiKeyValid: process.env.DEEPSEEK_API_KEY?.startsWith("sk-"),
+      message: "Failed to generate AI insights",
     });
   }
 });
 
-// 404 handler
-app.use("/notFound", (req, res) => {
-  res.status(404).json({
-    success: false,
-    message: "API endpoint not found",
-  });
+// Manual trigger endpoint for testing
+app.post("/api/send-test-alert", authenticateToken, async (req, res) => {
+  try {
+    await sendTestReminderEmail(req.user);
+    res.json({
+      success: true,
+      message: "Test alert sent successfully to your email",
+    });
+  } catch (error) {
+    console.error("Test alert error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to send test alert: " + error.message,
+    });
+  }
 });
 
-// Start server
+// ============================================================================
+// SERVER STARTUP
+// ============================================================================
+
+const initializeCronJobs = () => {
+  if (
+    process.env.NODE_ENV === "development" &&
+    process.env.ENABLE_TEST_CRON === "true"
+  ) {
+    startTestCronJob();
+    console.log("🎯 TEST cron job activated - Emails every 60 seconds");
+  } else {
+    startProductionCronJob();
+    console.log("🎯 PRODUCTION cron job activated - User preferred times");
+  }
+};
+
 const PORT = process.env.PORT || 5000;
 
 async function startServer() {
   try {
-    // Test database connection
     await sequelize.authenticate();
     console.log("✅ Database connection established successfully");
 
-    // Sync database
     await sequelize.sync({ alter: true });
     console.log("✅ Database synchronized successfully");
 
-    // Start server
+    initializeCronJobs();
+
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
       console.log(
-        `📧 Email alerts scheduled: ${
-          process.env.DAILY_ALERT_TIME || "0 8 * * * (8:00 AM daily)"
+        `📧 Email system: ${
+          process.env.ENABLE_TEST_CRON === "true"
+            ? "TEST MODE (60s)"
+            : "PRODUCTION MODE (user times)"
         }`
       );
       console.log(
         `🌐 Frontend URL: ${process.env.APP_URL || "http://localhost:3000"}`
       );
-
-      // Send initial test alert if enabled
-      if (process.env.SEND_INITIAL_ALERT === "true") {
-        setTimeout(() => {
-          console.log("Sending initial test alert...");
-          sendDailyHealthAlerts();
-        }, 5000);
-      }
     });
   } catch (error) {
     console.error("❌ Failed to start server:", error);

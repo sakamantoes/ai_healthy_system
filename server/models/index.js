@@ -2,12 +2,12 @@ const { Sequelize, DataTypes } = require("sequelize");
 require("dotenv").config();
 
 const sequelize = new Sequelize(
-  process.env.DB_NAME,
-  process.env.DB_USER,
-  process.env.DB_PASSWORD,
+  process.env.MYSQL_DATABASE,
+  process.env.MYSQLUSER,
+  process.env.MYSQLPASSWORD,
   {
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT,
+    host: process.env.MYSQLHOST,
+    port: process.env.MYSQLPORT,
     dialect: "mysql",
     logging: process.env.NODE_ENV === "development" ? console.log : false,
     pool: {
@@ -55,20 +55,63 @@ const User = sequelize.define(
       type: DataTypes.STRING,
       allowNull: false,
     },
-    preferences: {
-      type: DataTypes.JSON,
-      defaultValue: {
-        dailyAlerts: true,
-        medicationReminders: true,
-        motivationalMessages: true,
-      },
-    },
     lastAlertSent: {
       type: DataTypes.DATE,
     },
   },
   {
     tableName: "users",
+    timestamps: true,
+  }
+);
+
+// Preference Model (for email reminders only)
+const Preference = sequelize.define(
+  "Preference",
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+    },
+    // Email Notification Preferences
+    dailyHealthAlerts: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+    },
+    medicationReminders: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+    },
+    appointmentReminders: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+    },
+    symptomTrackingReminders: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+    },
+    goalProgressUpdates: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+    },
+    motivationalMessages: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+    },
+    // Email Frequency Preferences
+    emailFrequency: {
+      type: DataTypes.ENUM("instant", "daily_digest", "weekly_summary"),
+      defaultValue: "instant",
+    },
+    // Preferred Email Times (for digest/summary)
+    preferredEmailTime: {
+      type: DataTypes.TIME,
+      defaultValue: "09:00:00",
+    },
+  },
+  {
+    tableName: "preferences",
     timestamps: true,
   }
 );
@@ -102,6 +145,11 @@ const Medication = sequelize.define(
       type: DataTypes.TEXT,
     },
     isActive: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+    },
+    // Email reminder specific fields
+    sendEmailReminders: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,
     },
@@ -145,6 +193,11 @@ const Symptom = sequelize.define(
     recordedAt: {
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW,
+    },
+    // Email notification for symptom tracking
+    emailAlertSent: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
     },
   },
   {
@@ -201,6 +254,14 @@ const HealthGoal = sequelize.define(
       type: DataTypes.ENUM("low", "medium", "high"),
       defaultValue: "medium",
     },
+    // Email notifications for goal progress
+    sendProgressEmails: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+    },
+    lastProgressEmailSent: {
+      type: DataTypes.DATE,
+    },
   },
   {
     tableName: "health_goals",
@@ -208,7 +269,7 @@ const HealthGoal = sequelize.define(
   }
 );
 
-// Reminder Model
+// Reminder Model (Email only)
 const Reminder = sequelize.define(
   "Reminder",
   {
@@ -255,6 +316,18 @@ const Reminder = sequelize.define(
       type: DataTypes.ENUM("low", "medium", "high"),
       defaultValue: "medium",
     },
+    // Email specific fields
+    sendEmail: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+    },
+    emailSent: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
+    emailSentAt: {
+      type: DataTypes.DATE,
+    },
   },
   {
     tableName: "reminders",
@@ -262,7 +335,7 @@ const Reminder = sequelize.define(
   }
 );
 
-// HealthMetrics Model (New for tracking vital signs)
+// HealthMetrics Model
 const HealthMetric = sequelize.define(
   "HealthMetric",
   {
@@ -296,6 +369,15 @@ const HealthMetric = sequelize.define(
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW,
     },
+    // Email alerts for critical metrics
+    isCritical: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
+    criticalAlertSent: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
   },
   {
     tableName: "health_metrics",
@@ -304,12 +386,14 @@ const HealthMetric = sequelize.define(
 );
 
 // Define relationships
+User.hasOne(Preference, { foreignKey: "UserId", onDelete: "CASCADE" });
 User.hasMany(Medication, { foreignKey: "UserId", onDelete: "CASCADE" });
 User.hasMany(Symptom, { foreignKey: "UserId", onDelete: "CASCADE" });
 User.hasMany(HealthGoal, { foreignKey: "UserId", onDelete: "CASCADE" });
 User.hasMany(Reminder, { foreignKey: "UserId", onDelete: "CASCADE" });
 User.hasMany(HealthMetric, { foreignKey: "UserId", onDelete: "CASCADE" });
 
+Preference.belongsTo(User, { foreignKey: "UserId" });
 Medication.belongsTo(User, { foreignKey: "UserId" });
 Symptom.belongsTo(User, { foreignKey: "UserId" });
 HealthGoal.belongsTo(User, { foreignKey: "UserId" });
@@ -319,6 +403,7 @@ HealthMetric.belongsTo(User, { foreignKey: "UserId" });
 module.exports = {
   sequelize,
   User,
+  Preference,
   Medication,
   Symptom,
   HealthGoal,

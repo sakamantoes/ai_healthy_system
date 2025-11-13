@@ -11,12 +11,8 @@ const Register = ({ onLogin }) => {
     confirmPassword: "",
     age: "",
     condition: "",
-    preferences: {
-      dailyAlerts: true,
-      medicationReminders: true,
-      motivationalMessages: true,
-    },
   });
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
