@@ -10,9 +10,10 @@ import Layout from "./components/layout/Layout";
 import Login from "./components/auth/Login";
 import Register from "./components/auth/Register";
 import Dashboard from "./components/dashboard/Dashboard";
-import MedicationList from "./components/medications/MedicationList";
+
 import SymptomList from "./components/symptoms/SymptomList";
 import GoalList from "./components/goals/GoalList";
+import MedicationList from "./components/medication/MedicationList";
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
