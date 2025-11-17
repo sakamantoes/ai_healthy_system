@@ -25,6 +25,7 @@ const Register = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const { register } = useAuth();
   const navigate = useNavigate();
@@ -48,17 +49,25 @@ const Register = () => {
       }));
     }
     setError("");
+    setSuccess("");
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setSuccess("");
 
     const result = await register(formData);
 
     if (result.success) {
-      navigate("/");
+      setSuccess("Registration successful! Redirecting to login...");
+      // Wait a moment to show success message, then redirect
+      setTimeout(() => {
+        navigate("/login", {
+          state: { message: "Registration successful! Please log in." },
+        });
+      }, 1500);
     } else {
       setError(result.message);
     }
@@ -95,6 +104,16 @@ const Register = () => {
               className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg"
             >
               <span className="text-sm">{error}</span>
+            </motion.div>
+          )}
+
+          {success && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg"
+            >
+              <span className="text-sm">{success}</span>
             </motion.div>
           )}
 

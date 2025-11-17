@@ -24,22 +24,69 @@ api.interceptors.request.use(
   }
 );
 
-// Auth API
+// Response interceptor to handle errors
+api.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  (error) => {
+    console.error("API Error:", error.response?.data);
+    return Promise.reject(error);
+  }
+);
+
+// Auth API - FIXED VERSION
 export const authAPI = {
-  login: (credentials) => api.post("/login", credentials),
-  register: (userData) => api.post("/register", userData),
-  getProfile: (token) =>
-    api.get("/profile", {
-      headers: { Authorization: `Bearer ${token}` },
-    }),
-  updateProfile: (profileData, token) =>
-    api.put("/profile", profileData, {
-      headers: { Authorization: `Bearer ${token}` },
-    }),
-  updatePreferences: (preferencesData, token) =>
-    api.put("/preferences", preferencesData, {
-      headers: { Authorization: `Bearer ${token}` },
-    }),
+  login: async (credentials) => {
+    try {
+      const response = await api.post("/auth/login", credentials);
+      return response.data; // This should return { success: true, data: { token, user, preferences } }
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  register: async (userData) => {
+    try {
+      const response = await api.post("/auth/register", userData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  getProfile: async (token) => {
+    try {
+      const response = await api.get("/auth/profile", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  updateProfile: async (profileData, token) => {
+    try {
+      const response = await api.put("/auth/profile", profileData, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  updatePreferences: async (preferencesData, token) => {
+    try {
+      const response = await api.put("/auth/preferences", preferencesData, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
 };
 
 // Medications API

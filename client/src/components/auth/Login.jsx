@@ -26,18 +26,49 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Basic validation
+    if (!formData.email || !formData.password) {
+      setError("Please fill in all fields");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
-    const result = await login(formData.email, formData.password);
+    console.log("=== LOGIN DEBUG START ===");
+    console.log("Form data:", formData);
 
-    if (result.success) {
-      navigate("/");
-    } else {
-      setError(result.message);
+    try {
+      const result = await login(formData.email, formData.password);
+
+      console.log("Login result:", result);
+
+      if (result.success) {
+        console.log("✅ Login successful, navigating to dashboard");
+        // Use a slightly longer delay to ensure all state updates are processed
+        setTimeout(() => {
+          navigate("/", { replace: true });
+        }, 200);
+      } else {
+        console.log("❌ Login failed with error:", result.message);
+        setError(result.message || "Login failed. Please try again.");
+      }
+    } catch (error) {
+      console.error("🚨 Login unexpected error:", error);
+      setError("An unexpected error occurred. Please try again.");
+    } finally {
+      setLoading(false);
+      console.log("=== LOGIN DEBUG END ===");
     }
+  };
 
-    setLoading(false);
+  // Test with dummy credentials (remove in production)
+  const fillTestCredentials = () => {
+    setFormData({
+      email: "test@example.com",
+      password: "password123",
+    });
   };
 
   return (
@@ -59,6 +90,15 @@ const Login = () => {
           </motion.div>
           <h1 className="text-3xl font-bold text-white mb-2">Welcome Back</h1>
           <p className="text-blue-100">Sign in to your health dashboard</p>
+
+          {/* Test credentials button - remove in production */}
+          <button
+            type="button"
+            onClick={fillTestCredentials}
+            className="mt-4 text-blue-200 text-sm underline hover:text-white"
+          >
+            Fill Test Credentials
+          </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 space-y-6">

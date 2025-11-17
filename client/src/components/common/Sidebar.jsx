@@ -17,8 +17,6 @@ const Sidebar = () => {
     { path: "/medications", icon: Pill, label: "Medications" },
     { path: "/symptoms", icon: Activity, label: "Symptoms" },
     { path: "/goals", icon: Target, label: "Goals" },
-    { path: "/reminders", icon: Clock, label: "Reminders" },
-    { path: "/settings", icon: Settings, label: "Settings" },
   ];
 
   return (

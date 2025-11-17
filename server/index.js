@@ -5,6 +5,7 @@ const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const cron = require("node-cron");
 const axios = require("axios");
+const { Sequelize, Op } = require("sequelize");
 require("dotenv").config();
 
 const {
@@ -17,6 +18,7 @@ const {
   Reminder,
   HealthMetric,
 } = require("./models");
+const { RAW } = require("sequelize/lib/query-types");
 
 const app = express();
 
@@ -56,9 +58,110 @@ class DeepSeekAIService {
   constructor() {
     this.apiKey = process.env.DEEPSEEK_API_KEY;
     this.baseURL = "https://api.deepseek.com/v1/chat/completions";
+    this.monthlyUsage = 0;
+    this.usageLimit = process.env.DEEPSEEK_USAGE_LIMIT || 1000;
+    this.lastBalanceCheck = null;
+  }
+
+  // Verify API configuration
+  verifyConfiguration() {
+    const issues = [];
+
+    if (!this.apiKey) {
+      issues.push("DEEPSEEK_API_KEY environment variable not set");
+    }
+
+    if (this.apiKey && this.apiKey.length < 20) {
+      issues.push("API key appears invalid (too short)");
+    }
+
+    return {
+      configured: issues.length === 0,
+      issues,
+      apiKeyPresent: !!this.apiKey,
+      usage: {
+        current: this.monthlyUsage,
+        limit: this.usageLimit,
+        remaining: this.usageLimit - this.monthlyUsage,
+      },
+    };
+  }
+
+  // Check API status and balance
+  async checkAPIStatus() {
+    try {
+      const response = await axios.get("https://api.deepseek.com/v1/models", {
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        timeout: 10000,
+      });
+
+      this.lastBalanceCheck = new Date();
+      return {
+        status: "active",
+        models: response.data,
+        lastChecked: this.lastBalanceCheck,
+      };
+    } catch (error) {
+      const errorDetails = this.parseAPIError(error);
+      return {
+        status: "error",
+        message: errorDetails.message,
+        type: errorDetails.type,
+        shouldUseFallback: errorDetails.shouldUseFallback,
+      };
+    }
+  }
+
+  // Parse API errors and determine appropriate action
+  parseAPIError(error) {
+    const errorData = error.response?.data;
+
+    if (!errorData) {
+      return {
+        message: error.message,
+        type: "network_error",
+        shouldUseFallback: true,
+      };
+    }
+
+    const errorMessage = errorData.error?.message || "Unknown API error";
+    const errorType = errorData.error?.type || "unknown_error";
+    const errorCode = errorData.error?.code || "unknown";
+
+    // Determine if we should use fallback based on error type
+    const balanceErrors = [
+      "insufficient_balance",
+      "invalid_request_error",
+      "billing_error",
+    ];
+    const authErrors = ["invalid_api_key", "authentication_error"];
+    const quotaErrors = ["quota_exceeded", "rate_limit_exceeded"];
+
+    const shouldUseFallback =
+      balanceErrors.some((e) => errorMessage.toLowerCase().includes(e)) ||
+      authErrors.includes(errorType) ||
+      quotaErrors.includes(errorType) ||
+      balanceErrors.includes(errorCode);
+
+    return {
+      message: errorMessage,
+      type: errorType,
+      code: errorCode,
+      shouldUseFallback,
+    };
   }
 
   async generateHealthRecommendation(userData, healthData) {
+    // Check usage limits before making API call
+    if (this.monthlyUsage >= this.usageLimit) {
+      console.warn(
+        "Monthly usage limit reached, using fallback recommendation"
+      );
+      return this.getFallbackRecommendation(healthData);
+    }
+
     try {
       if (!this.apiKey) {
         throw new Error("DeepSeek API key not configured");
@@ -96,17 +199,44 @@ class DeepSeekAIService {
       );
 
       if (response.data.choices && response.data.choices[0]) {
+        this.monthlyUsage++; // Only count successful calls
         return response.data.choices[0].message.content;
       } else {
         throw new Error("Invalid response format from DeepSeek API");
       }
     } catch (error) {
-      console.error(
-        "DeepSeek API Error:",
-        error.response?.data || error.message
-      );
+      const errorDetails = this.parseAPIError(error);
+
+      console.error("DeepSeek API Error:", {
+        message: errorDetails.message,
+        type: errorDetails.type,
+        code: errorDetails.code,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Log balance issues for admin monitoring
+      if (errorDetails.shouldUseFallback) {
+        console.error(
+          "API Balance/Quota issue detected. Using fallback recommendation."
+        );
+        // Here you could add alerting to notify administrators
+        this.notifyAdmins(errorDetails);
+      }
+
       return this.getFallbackRecommendation(healthData);
     }
+  }
+
+  // Notify administrators of API issues (implement based on your notification system)
+  notifyAdmins(errorDetails) {
+    // Example: Send email, Slack message, or log to monitoring service
+    console.warn("ADMIN ALERT: DeepSeek API Issue -", errorDetails.message);
+
+    // Implement your preferred notification method:
+    // - Send email
+    // - Slack webhook
+    // - Discord notification
+    // - Log to external monitoring service
   }
 
   createHealthAnalysisPrompt(userData, healthData) {
@@ -184,6 +314,14 @@ Today's Simple Steps:
   }
 
   async analyzeSymptoms(symptoms, userCondition) {
+    // Check usage limits
+    if (this.monthlyUsage >= this.usageLimit) {
+      console.warn(
+        "Monthly usage limit reached, using fallback symptom analysis"
+      );
+      return this.analyzeSymptomsFallback(symptoms);
+    }
+
     try {
       if (!this.apiKey) {
         return this.analyzeSymptomsFallback(symptoms);
@@ -222,15 +360,29 @@ Today's Simple Steps:
             Authorization: `Bearer ${this.apiKey}`,
             "Content-Type": "application/json",
           },
+          timeout: 30000,
         }
       );
 
       const analysis = response.data.choices[0].message.content;
       const riskLevel = this.calculateRiskLevel(symptoms);
 
+      this.monthlyUsage++; // Only count successful calls
+
       return { analysis, riskLevel };
     } catch (error) {
-      console.error("DeepSeek Symptom Analysis Error:", error);
+      const errorDetails = this.parseAPIError(error);
+
+      console.error("DeepSeek Symptom Analysis Error:", {
+        message: errorDetails.message,
+        type: errorDetails.type,
+        timestamp: new Date().toISOString(),
+      });
+
+      if (errorDetails.shouldUseFallback) {
+        this.notifyAdmins(errorDetails);
+      }
+
       return this.analyzeSymptomsFallback(symptoms);
     }
   }
@@ -260,9 +412,28 @@ Today's Simple Steps:
       riskLevel,
     };
   }
+
+  // Reset monthly usage (call this at the beginning of each month)
+  resetUsage() {
+    this.monthlyUsage = 0;
+    console.log("Monthly usage counter reset");
+  }
+
+  // Get current usage statistics
+  getUsageStats() {
+    return {
+      monthlyUsage: this.monthlyUsage,
+      usageLimit: this.usageLimit,
+      remainingCalls: this.usageLimit - this.monthlyUsage,
+      usagePercentage: ((this.monthlyUsage / this.usageLimit) * 100).toFixed(2),
+    };
+  }
 }
 
 const deepSeekService = new DeepSeekAIService();
+
+// Export for use in other files
+module.exports = deepSeekService;
 
 // Authentication Middleware
 const authenticateToken = async (req, res, next) => {
@@ -327,7 +498,12 @@ const startTestCronJob = () => {
 
       for (const user of users) {
         try {
-          await sendTestReminderEmail(user);
+          if (
+            process.env.ENABLE_EMAIL_SENDING &&
+            process.env.NODE_ENV === "production"
+          ) {
+            await sendTestReminderEmail(user);
+          }
           console.log(`✅ TEST CRON: Test email sent to ${user.email}`);
 
           await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -394,7 +570,7 @@ const startProductionCronJob = () => {
   });
 
   // Schedule 2: Medication Reminders - Check every minute
-  cron.schedule("* * * * *", async () => {
+  cron.schedule("*/2 * * * *", async () => {
     try {
       console.log("🔄 PRODUCTION CRON: Checking for medication reminders...");
 
@@ -424,20 +600,14 @@ const startProductionCronJob = () => {
         ],
       });
 
-      const medicationsDue = medications.filter((med) => {
-        return med.times.includes(currentTime);
-      });
-
-      console.log(
-        `🔄 PRODUCTION CRON: Found ${medicationsDue.length} medication reminders due`
-      );
-
-      for (const medication of medicationsDue) {
+      for (let i = 0; i < medications.length; ++i) {
+        let medication = medications[i];
         try {
           await sendMedicationReminderEmail(medication.User, medication);
           console.log(
             `✅ PRODUCTION CRON: Medication reminder sent for ${medication.name}`
           );
+
           await new Promise((resolve) => setTimeout(resolve, 1000));
         } catch (error) {
           console.error(
@@ -459,14 +629,8 @@ const startProductionCronJob = () => {
     try {
       console.log("🔄 PRODUCTION CRON: Checking for general reminders...");
 
-      const now = new Date();
-      const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60000);
-
       const reminders = await Reminder.findAll({
         where: {
-          scheduledTime: {
-            [sequelize.Op.between]: [now, fiveMinutesFromNow],
-          },
           isCompleted: false,
           sendEmail: true,
           emailSent: false,
@@ -846,7 +1010,7 @@ async function sendDailyAlertToUser(user) {
 // ============================================================================
 
 // Auth Routes
-app.post("/api/register", async (req, res) => {
+app.post("/api/auth/register", async (req, res) => {
   try {
     const { name, email, password, age, condition, preferences } = req.body;
 
@@ -915,7 +1079,7 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
-app.post("/api/login", async (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -1541,7 +1705,7 @@ app.put("/api/preferences", authenticateToken, async (req, res) => {
 });
 
 // User Profile Routes
-app.get("/api/profile", authenticateToken, async (req, res) => {
+app.get("/api/auth/profile", authenticateToken, async (req, res) => {
   try {
     const user = req.user;
     const preferences = await Preference.findOne({
@@ -1611,6 +1775,7 @@ app.put("/api/profile", authenticateToken, async (req, res) => {
 });
 
 // AI Insights Route
+// Change from app.get to app.post
 app.get("/api/ai-insights", authenticateToken, async (req, res) => {
   try {
     const user = req.user;
@@ -1669,6 +1834,7 @@ app.get("/api/ai-insights", authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to generate AI insights",
+      error: error.message, // Include error message for debugging
     });
   }
 });
@@ -1676,7 +1842,12 @@ app.get("/api/ai-insights", authenticateToken, async (req, res) => {
 // Manual trigger endpoint for testing
 app.post("/api/send-test-alert", authenticateToken, async (req, res) => {
   try {
-    await sendTestReminderEmail(req.user);
+    if (
+      process.env.ENABLE_EMAIL_SENDING &&
+      process.env.NODE_ENV === "production"
+    ) {
+      await sendTestReminderEmail(req.user);
+    }
     res.json({
       success: true,
       message: "Test alert sent successfully to your email",
@@ -1695,10 +1866,7 @@ app.post("/api/send-test-alert", authenticateToken, async (req, res) => {
 // ============================================================================
 
 const initializeCronJobs = () => {
-  if (
-    process.env.NODE_ENV === "development" &&
-    process.env.ENABLE_TEST_CRON === "true"
-  ) {
+  if (process.env.TEST_CRON) {
     startTestCronJob();
     console.log("🎯 TEST cron job activated - Emails every 60 seconds");
   } else {
